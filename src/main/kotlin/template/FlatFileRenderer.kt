@@ -44,17 +44,22 @@ class FlatFileRenderer(
         }
 
         // Prepare the flatfile
-        val signatureFile = File(outputDir, "all-func.txt")
+        val signatureFile = File(outputDir, "all_func.csv")
         signatureFile.printWriter().use { writer ->
             // Walk the page tree and collect signatures
             logger.progress("Found root")
             logger.progress(root.name)
 
+            writer.println("signature, package_path")
             if (root is ModulePageNode) {
                 val index = buildDocumentableIndex(root.documentables.first())
                 logger.progress("index built ${index.keys}")
-                root.documentables.first().collectFunctionSignatures(index).forEach {
-                    writer.println(it)
+                val allFunctionSigs = root.documentables.first().collectFunctionSignatures(index).toTypedArray()
+                setOf(*allFunctionSigs)
+                    .toTypedArray()
+                    .sortedBy { it.second } // ranked alphabetically by package path name
+                    .forEach {
+                        writer.println("${it.first}, ${it.second}")
                 }
             }
 
@@ -75,8 +80,8 @@ class FlatFileRenderer(
     }
 
     // Recursively look for Container.function and their parameter type's constructors
-    private fun Documentable.collectFunctionSignatures(index: Map<DRI, Documentable>): List<String> {
-        val signatures = mutableListOf<String>()
+    private fun Documentable.collectFunctionSignatures(index: Map<DRI, Documentable>): List<Pair<String, String>> {
+        val signatures = mutableListOf<Pair<String, String>>()
         if (this is DModule) {
             this.packages.flatMap { it.functions }.forEach {
                 if (it.receiver?.type?.driOrNull?.classNames == "Container") {
@@ -95,10 +100,10 @@ class FlatFileRenderer(
             val parametersStr = parametersStrList.joinToString(", ")
 
             if (this.receiver?.type?.driOrNull?.classNames == "Container") {
-                signatures.add("fun Container.${this.name}(${parametersStr})")
+                signatures.add(Pair("fun Container.${this.name}(${parametersStr})", this.dri.packageName.orEmpty()))
             } else {
                 // otherwise we output constructor
-                signatures.add("class ${this.name}(${parametersStr})")
+                signatures.add(Pair("class ${this.name}(${parametersStr})",this.dri.packageName.orEmpty()))
             }
             signatures.addAll(this.parameters.flatMap { it.collectFunctionSignatures(index) })
         } else if (this is DParameter) {
